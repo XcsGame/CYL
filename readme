@@ -1,0 +1,68 @@
+# 苍岩 (CYL) - 我的世界 Java 版启动器
+
+一个用 C#/.NET 8 + Avalonia 实现的 Windows 桌面 MC 启动器（免安装单文件 exe）。
+
+功能范围：
+- 从 Mojang meta 拉取版本清单，支持任意新旧版本（含 `inheritsFrom` 继承合并）
+- 下载客户端 / 库 / 资源（带 SHA1 校验、多线程并行，线程数 1~256 可配）
+- 自动解析 OS / feature 规则构造合法 JVM 与游戏参数
+- 按版本要求的 Java 精确匹配与自动获取（老版本强制 Java 8）
+- 离线账号（版本 3 UUID）与 **Microsoft 正版登录**（设备码流程 + 令牌续期）
+- 启动器自我更新（清单 + SHA256 校验 + bat 热替换重启）
+
+## 技术栈与结构
+
+- .NET 8 (C#)，Avalonia 11（跨平台 XAML UI），Fluent Dark 主题
+- 无第三方启动器依赖，启动引擎自实现
+
+```
+McLauncher.sln
+McLauncher.Core/        # 无 UI 的启动器引擎
+  Mojang/                # 版本清单 / 单版本解析 / JSON 模型 / OS·feature 规则
+  Download/              # SHA1 校验 + 并行下载
+  Launch/                # 依赖解析 → 原生库解压 → 构造 JVM/游戏参数 → 拉起进程
+  Models/                # 版本清单模型
+McLauncher.App/          # Avalonia UI（PCL 式首页、设置、账号、关于、日志面板）
+McLauncher.CoreTest/     # 引擎验证控制台
+```
+
+## 构建
+
+```bash
+# 依赖 .NET SDK 8.0（Windows / Linux 均可交叉编译）
+dotnet build McLauncher.sln
+```
+
+引擎逻辑可在 Linux 下用 `McLauncher.CoreTest` 交叉验证（不依赖 UI）。
+
+## 发布单文件免安装 exe
+
+```bash
+dotnet publish McLauncher.App -c Release -r win-x64 \
+  --self-contained true \
+  -p:PublishSingleFile=true \
+  -p:PublishTrimmed=false \
+  -p:IncludeAllContentForSelfExtract=true \
+  -o publish/win-x64-single
+```
+
+产出 `publish/win-x64-single/CYL.exe`（约 90MB，免安装，单文件自包含）。
+
+## Microsoft 正版登录与 client_id
+
+微软登录需要 Azure 应用的 `client_id`。出于开源可读环境的谨慎，本仓库**不落明文**：真实 id
+以「XOR+Base64 混淆」后的密文存于 `McLauncher.App/AppController.cs` 的 `ClientIdCipher`，
+运行时通过 `McLauncher.App/Obfuscation.cs` 的 `Decrypt` 还原。
+
+> 注意：混淆只防「开箱即读」，**不是真正的加密**——密钥随程序分发，任何逆向均可还原。
+> 若要正式对外分发，建议换成**用户自持的 Azure 应用 id**，或改为配置项在运行时填写。
+
+## 致谢 / 参考
+
+Microsoft 登录实现（设备码端点 `consumers/oauth2/v2.0/devicecode`、XBL / XSTS / Minecraft
+services 链路、refresh_token 续期）。本工程为独立实现。
+
+## 数据目录
+
+配置、`.minecraft`、日志均存放于 **exe 所在目录**（基于 `Environment.ProcessPath`）。
+禁用 `AppContext.BaseDirectory`（单文件自解压时它指向会被清理的临时目录）。
